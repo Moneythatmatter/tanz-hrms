@@ -124,10 +124,9 @@ export function HRDashboardView() {
     payCycleDate: "—",
   });
   const [grievanceSummary, setGrievanceSummary] = useState<GrievanceSummary>({
-    open: 0,
-    inProgress: 0,
-    escalated: 0,
-    resolved: 0,
+    submitted: 0,
+    pending: 0,
+    closed: 0,
   });
   const [departmentHeadcounts, setDepartmentHeadcounts] = useState<DepartmentHeadcount[]>([]);
   const [attendanceBreakdown, setAttendanceBreakdown] = useState<AttendanceBreakdown>({
@@ -223,9 +222,9 @@ export function HRDashboardView() {
         trend: "down",
       },
       {
-        title: "Open Grievances",
-        value: String(grievanceSummary.open),
-        change: `${grievanceSummary.escalated} escalated`,
+        title: "Active Grievances",
+        value: String(grievanceSummary.submitted + grievanceSummary.pending),
+        change: `${grievanceSummary.pending} pending review`,
         trend: "down",
       },
       {
@@ -767,7 +766,7 @@ export function HRDashboardView() {
           subtitle="Complaint status overview"
           action={
             <a
-              href="/human-resources/grievances/complaint-list"
+              href="/human-resources/grievances"
               className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-900"
             >
               Grievance portal
@@ -775,11 +774,10 @@ export function HRDashboardView() {
             </a>
           }
         >
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <MetricTile label="Open" value={grievanceSummary.open} detail="Needs HR review" />
-            <MetricTile label="In progress" value={grievanceSummary.inProgress} detail="Under investigation" />
-            <MetricTile label="Escalated" value={grievanceSummary.escalated} detail="Management review" />
-            <MetricTile label="Resolved" value={grievanceSummary.resolved} detail="Closed this year" />
+          <div className="grid grid-cols-3 gap-3">
+            <MetricTile label="Submitted" value={grievanceSummary.submitted} detail="Awaiting HR" />
+            <MetricTile label="Pending" value={grievanceSummary.pending} detail="Under review" />
+            <MetricTile label="Closed" value={grievanceSummary.closed} detail="Completed" />
           </div>
         </PanelCard>
       </div>

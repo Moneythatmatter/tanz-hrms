@@ -19,10 +19,10 @@ import type { PayslipRecord } from "@/components/hr/PayslipsView";
 import type { ComplaintCategory } from "@/components/hr/ComplaintCategoriesView";
 import type { ComplaintRecord } from "@/components/hr/ComplaintListView";
 import type { GrievanceComplaint } from "@/components/hr/RaiseComplaintView";
-import type { ComplaintStatusTicket } from "@/components/hr/ComplaintStatusView";
 import type { HRKpiSummary, GrievanceSummary, DepartmentHeadcount } from "@/app/data/hr/hrDashboardData";
 import { normalizeToIsoDate } from "./report-export";
 import { formatApiDate } from "./useHrList";
+import { normalizeGrievanceStatus } from "./grievance-status";
 
 export function mapPayrollFromApi(row: Record<string, unknown>): EmployeePayrollRecord {
   return {
@@ -406,6 +406,8 @@ export function mapComplaintCategoryToApi(form: Omit<ComplaintCategory, "id" | "
     categoryName: form.categoryName,
     description: form.description,
     reviewLevel: form.reviewLevel,
+    slaDays: form.slaDays,
+    defaultPriority: form.defaultPriority,
     status: form.status,
   };
 }
@@ -987,11 +989,16 @@ export function mapPayslipFromApi(row: Record<string, unknown>, emp?: EmployeeLo
 
 
 export function mapComplaintCategoryFromApi(row: Record<string, unknown>): ComplaintCategory {
+  const slaRaw = row.slaDays ?? row.sla_days;
+  const priorityRaw = row.defaultPriority ?? row.default_priority;
   return {
     id: String(row.id),
-    categoryName: String(row.categoryName ?? ""),
+    categoryName: String(row.categoryName ?? row.category_name ?? ""),
     description: String(row.description ?? ""),
     reviewLevel: (row.reviewLevel as ComplaintCategory["reviewLevel"]) ?? "Standard",
+    slaDays: Number(slaRaw ?? 7) || 7,
+    defaultPriority:
+      (priorityRaw as ComplaintCategory["defaultPriority"]) ?? "Medium",
     status: (row.status as ComplaintCategory["status"]) ?? "Active",
     createdDate: formatApiDate(row.createdAt as string),
     complaintsCount: Number(row.complaintsCount ?? row.ticketCount ?? 0),
@@ -1063,8 +1070,11 @@ export function mapComplaintToGrievance(row: Record<string, unknown>, emp?: Empl
     description: String(row.description ?? ""),
     incidentDate: formatApiDate((row.incidentDate ?? row.incident_date) as string),
     priority: ((row.priority as GrievanceComplaint["priority"]) ?? "Medium") || "Medium",
-    status: ((row.status as GrievanceComplaint["status"]) ?? "Open") || "Open",
+    status: normalizeGrievanceStatus(String(row.status ?? "Submitted")),
     submittedDate: formatApiDate((row.submittedDate ?? row.submitted_date) as string),
+    submittedDateIso: String(row.submittedDate ?? row.submitted_date ?? "").slice(0, 10),
+    dueDate: formatApiDate((row.dueDate ?? row.due_date) as string),
+    dueDateIso: String(row.dueDate ?? row.due_date ?? "").slice(0, 10) || undefined,
     isAnonymous: Boolean(row.isAnonymous ?? row.is_anonymous),
     assignedTo: (row.assignedOfficer ?? row.assigned_officer) as string | undefined,
     attachmentName: (row.attachmentName ?? row.attachment_name) as string | undefined,
@@ -1072,107 +1082,6 @@ export function mapComplaintToGrievance(row: Record<string, unknown>, emp?: Empl
       row.resolution_notes ??
       row.proposedResolution ??
       row.proposed_resolution) as string | undefined,
-  };
-}
-
-export function mapComplaintToStatusTicket(
-  row: Record<string, unknown>,
-  emp?: EmployeeLookup,
-): ComplaintStatusTicket {
-  const status = ((row.status as ComplaintStatusTicket["status"]) ?? "Open") || "Open";
-  const submittedDate = formatApiDate((row.submittedDate ?? row.submitted_date) as string);
-  const assignedOfficer = String(row.assignedOfficer ?? row.assigned_officer ?? "");
-  const resolutionNotes = (row.resolutionNotes ??
-    row.resolution_notes ??
-    row.proposedResolution ??
-    row.proposed_resolution) as string | undefined;
-
-  let rawTimeline = (row.timeline as Array<Record<string, unknown>>) ?? [];
-  if (!Array.isArray(rawTimeline)) {
-    rawTimeline = [];
-  }
-
-  let steps: ComplaintStatusTicket["steps"] = [];
-  if (rawTimeline.length > 0) {
-    steps = rawTimeline.map((item, idx) => ({
-      title: String(item.action || item.title || item.newStatus || "Investigation Step"),
-      timestamp: String(item.timestamp || item.date || ""),
-      by: String(item.user || item.actor || item.by || ""),
-      notes: String(item.comment || item.notes || ""),
-      completed: true,
-      active: idx === 0,
-    }));
-  }
-
-  if (steps.length === 0) {
-    const statusStr = String(status);
-    const isResolvedOrClosed = statusStr === "Resolved" || statusStr === "Closed";
-    const isInvestigating =
-      statusStr === "Assigned" ||
-      statusStr === "In Review" ||
-      statusStr === "Under Investigation" ||
-      statusStr.startsWith("Pending") ||
-      statusStr === "Resolution Proposed";
-
-    steps = [
-      {
-        title: "Complaint Logged",
-        timestamp: submittedDate || "Recently",
-        by: emp?.name ?? String(row.employeeName ?? row.employee_name ?? "Employee"),
-        notes: "Grievance ticket registered in system.",
-        completed: true,
-        active: statusStr === "Open",
-      },
-      {
-        title: assignedOfficer ? `Assigned to ${assignedOfficer}` : "Officer Assignment",
-        timestamp: assignedOfficer ? "In Progress" : "Pending",
-        by: assignedOfficer || "HR Review Desk",
-        notes: assignedOfficer ? "Officer assigned for grievance review." : "Pending review and assignment.",
-        completed: isInvestigating || isResolvedOrClosed,
-        active: statusStr === "Assigned" || statusStr === "In Review",
-      },
-      {
-        title: "Investigation & Review",
-        timestamp: isInvestigating ? "Active" : isResolvedOrClosed ? "Completed" : "Pending",
-        by: assignedOfficer || "Grievance Officer",
-        notes: isInvestigating ? "Case currently under inquiry and assessment." : undefined,
-        completed: isResolvedOrClosed,
-        active:
-          statusStr === "Under Investigation" ||
-          statusStr.startsWith("Pending") ||
-          statusStr === "Resolution Proposed",
-      },
-      {
-        title: "Resolution & Closure",
-        timestamp: isResolvedOrClosed ? "Finalized" : "Pending",
-        by: "HR Management",
-        notes: resolutionNotes || (isResolvedOrClosed ? "Grievance resolved." : "Pending final resolution."),
-        completed: isResolvedOrClosed,
-        active: isResolvedOrClosed,
-      },
-    ];
-  }
-
-  return {
-    id: String(row.id),
-    ticketNo: String(row.ticketNo ?? row.ticket_no ?? ""),
-    category: String(row.category ?? ""),
-    subject: String(row.subject ?? ""),
-    description: String(row.description ?? ""),
-    incidentDate: formatApiDate((row.incidentDate ?? row.incident_date) as string),
-    submittedDate,
-    priority: (row.priority as ComplaintStatusTicket["priority"]) ?? "Medium",
-    status,
-    isAnonymous: Boolean(row.isAnonymous ?? row.is_anonymous),
-    employeeName: emp?.name ?? String(row.employeeName ?? row.employee_name ?? ""),
-    assignedOfficer,
-    assignedDepartment: String(
-      row.assignedDepartment ?? row.assigned_department ?? row.assignedRole ?? row.assigned_role ?? "",
-    ),
-    lastUpdated: formatApiDate((row.updatedAt ?? row.updated_at) as string) || submittedDate,
-    resolutionNotes,
-    attachmentName: (row.attachmentName ?? row.attachment_name) as string | undefined,
-    steps,
   };
 }
 
@@ -1257,10 +1166,9 @@ export function mapDashboardFromApi(data: Record<string, unknown>) {
   }));
 
   const grievanceSummary: GrievanceSummary = {
-    open: Number(grievances.open ?? 0),
-    inProgress: Number(grievances.inProgress ?? 0),
-    escalated: Number(grievances.escalated ?? 0),
-    resolved: Number(grievances.resolved ?? 0),
+    submitted: Number(grievances.submitted ?? grievances.open ?? 0),
+    pending: Number(grievances.pending ?? grievances.inProgress ?? 0),
+    closed: Number(grievances.closed ?? grievances.resolved ?? 0),
   };
 
   const attendanceBreakdown = {

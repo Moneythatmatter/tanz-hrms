@@ -63,10 +63,9 @@ export interface HolidayShiftItem {
 }
 
 export interface GrievanceSummary {
-  open: number;
-  inProgress: number;
-  escalated: number;
-  resolved: number;
+  submitted: number;
+  pending: number;
+  closed: number;
 }
 
 export const sampleHRKpiSummary: HRKpiSummary = {
@@ -119,10 +118,9 @@ export const sampleEvents: EmployeeEventItem[] = [];
 export const sampleHolidaysAndShifts: HolidayShiftItem[] = [];
 
 export const sampleGrievances: GrievanceSummary = {
-  open: 0,
-  inProgress: 0,
-  escalated: 0,
-  resolved: 0,
+  submitted: 0,
+  pending: 0,
+  closed: 0,
 };
 
 export interface DesignationHeadcount {

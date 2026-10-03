@@ -13,6 +13,7 @@ import {
   Coins,
   FileCog,
   Sun,
+  Tags,
 } from "lucide-react";
 import { ModulePageShell } from "@/components/pms";
 import { humanResourcesNavItems } from "@/app/data/navigation/humanResources";
@@ -30,6 +31,7 @@ const masterIconMap: Record<string, React.ComponentType<{ className?: string }>>
   "calendar-range": CalendarRange,
   coins: Coins,
   "file-cog": FileCog,
+  tags: Tags,
 };
 
 const masterDescriptions: Record<string, string> = {
@@ -42,6 +44,7 @@ const masterDescriptions: Record<string, string> = {
   "Holiday Calendar": "Public holidays, optional offs, and property closures.",
   "Salary Components": "Earnings, deductions, and statutory line items.",
   "Document Masters": "Required HR documents, expiry rules, and templates.",
+  "Complaint Categories": "Grievance types, SLA days, and default priority for tickets.",
 };
 
 export function HRMastersHubView() {

@@ -17,8 +17,6 @@ import { CompensationIncrementsView } from "@/components/hr/CompensationIncremen
 import { PayslipsView } from "@/components/hr/PayslipsView";
 import { ComplaintCategoriesView } from "@/components/hr/ComplaintCategoriesView";
 import { RaiseComplaintView } from "@/components/hr/RaiseComplaintView";
-import { ComplaintListView } from "@/components/hr/ComplaintListView";
-import { ComplaintStatusView } from "@/components/hr/ComplaintStatusView";
 import { DepartmentMasterView } from "@/components/hr/DepartmentMasterView";
 import { DesignationMasterView } from "@/components/hr/DesignationMasterView";
 import { EmploymentTypesMasterView } from "@/components/hr/EmploymentTypesMasterView";
@@ -107,15 +105,16 @@ export default async function HumanResourcesPage({
     return <PayrollSettingsView />;
   }
 
-  if (
-    slugPath === "grievances/complaint-categories" ||
-    slugPath === "grievances/categories" ||
-    slugPath === "masters/complaint-categories"
-  ) {
+  if (slugPath === "grievances/complaint-categories" || slugPath === "grievances/categories") {
+    redirect("/human-resources/masters/complaint-categories");
+  }
+
+  if (slugPath === "masters/complaint-categories") {
     return <ComplaintCategoriesView />;
   }
 
   if (
+    slugPath === "grievances" ||
     slugPath === "grievances/raise-complaint" ||
     slugPath === "grievances/raise"
   ) {
@@ -124,17 +123,11 @@ export default async function HumanResourcesPage({
 
   if (
     slugPath === "grievances/complaint-list" ||
-    slugPath === "grievances/list"
-  ) {
-    return <ComplaintListView />;
-  }
-
-  if (
+    slugPath === "grievances/list" ||
     slugPath === "grievances/complaint-status" ||
-    slugPath === "grievances/status" ||
-    slugPath === "grievances"
+    slugPath === "grievances/status"
   ) {
-    return <ComplaintStatusView />;
+    redirect("/human-resources/grievances");
   }
 
   if (slugPath === "masters") {

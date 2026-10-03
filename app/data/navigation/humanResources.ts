@@ -31,12 +31,6 @@ export const humanResourcesNavItems: ModuleNavItem[] = [
     label: "Grievances",
     href: "/human-resources/grievances",
     icon: "message-square-warning",
-    children: [
-      { label: "Raise Complaint", href: "/human-resources/grievances/raise-complaint", icon: "plus-circle" },
-      { label: "Complaint List", href: "/human-resources/grievances/complaint-list", icon: "list-todo" },
-      { label: "Complaint Categories", href: "/human-resources/grievances/complaint-categories", icon: "tags" },
-      { label: "Complaint Status", href: "/human-resources/grievances/complaint-status", icon: "activity" },
-    ],
   },
   { label: "Reports", href: "/human-resources/reports", icon: "bar-chart" },
   { label: "User Management", href: "/human-resources/settings/users", icon: "user-check" },
@@ -54,6 +48,7 @@ export const humanResourcesNavItems: ModuleNavItem[] = [
       { label: "Holiday Calendar", href: "/human-resources/masters/holiday-calendar", icon: "calendar-range" },
       { label: "Salary Components", href: "/human-resources/masters/salary-components", icon: "coins" },
       { label: "Document Masters", href: "/human-resources/masters/document-masters", icon: "file-cog" },
+      { label: "Complaint Categories", href: "/human-resources/masters/complaint-categories", icon: "tags" },
     ],
   },
 ];

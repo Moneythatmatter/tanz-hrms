@@ -26,11 +26,15 @@ export type ComplaintCategoryStatus = "Active" | "Inactive";
 
 export type ReviewLevelRequirement = "Standard" | "Manager Review" | "Senior Management Review" | "Special Committee Review";
 
+export type ComplaintCategoryPriority = "Low" | "Medium" | "High" | "Critical";
+
 export interface ComplaintCategory {
   id: string;
   categoryName: string;
   description: string;
   reviewLevel: ReviewLevelRequirement;
+  slaDays: number;
+  defaultPriority: ComplaintCategoryPriority;
   status: ComplaintCategoryStatus;
   createdDate: string;
   complaintsCount: number;
@@ -67,7 +71,8 @@ export function ComplaintCategoriesView() {
   // Form Inputs
   const [formName, setFormName] = useState("");
   const [formDescription, setFormDescription] = useState("");
-  const [formReviewLevel, setFormReviewLevel] = useState<ReviewLevelRequirement>("Standard");
+  const [formSlaDays, setFormSlaDays] = useState(7);
+  const [formDefaultPriority, setFormDefaultPriority] = useState<ComplaintCategoryPriority>("Medium");
   const [formStatus, setFormStatus] = useState<ComplaintCategoryStatus>("Active");
   const [nameError, setNameError] = useState("");
 
@@ -97,7 +102,8 @@ export function ComplaintCategoriesView() {
     setEditingCategory(null);
     setFormName("");
     setFormDescription("");
-    setFormReviewLevel("Standard");
+    setFormSlaDays(7);
+    setFormDefaultPriority("Medium");
     setFormStatus("Active");
     setNameError("");
     setIsModalOpen(true);
@@ -108,7 +114,8 @@ export function ComplaintCategoriesView() {
     setEditingCategory(category);
     setFormName(category.categoryName);
     setFormDescription(category.description);
-    setFormReviewLevel(category.reviewLevel || "Standard");
+    setFormSlaDays(category.slaDays ?? 7);
+    setFormDefaultPriority(category.defaultPriority ?? "Medium");
     setFormStatus(category.status);
     setNameError("");
     setIsModalOpen(true);
@@ -136,10 +143,14 @@ export function ComplaintCategoriesView() {
       return;
     }
 
+    const slaDays = Math.max(1, Math.min(90, Number(formSlaDays) || 7));
+
     const payload = mapComplaintCategoryToApi({
       categoryName: formName.trim(),
       description: formDescription.trim(),
-      reviewLevel: formReviewLevel,
+      reviewLevel: editingCategory?.reviewLevel ?? "Standard",
+      slaDays,
+      defaultPriority: formDefaultPriority,
       status: formStatus,
     });
 
@@ -191,12 +202,12 @@ export function ComplaintCategoriesView() {
 
   return (
     <ModulePageShell
-      eyebrow="Human Resource / Grievances"
+      eyebrow="Human Resource / Masters"
       title="Complaint Categories"
-      description="Configure grievance categories available to employees."
+      description="Configure grievance categories, SLA targets, and default priority for raise-complaint flows."
       breadcrumbs={[
         { label: "Human Resource", href: "/human-resources/dashboard" },
-        { label: "Grievances" },
+        { label: "Masters", href: "/human-resources/masters" },
         { label: "Complaint Categories" },
       ]}
       toast={toastMessage}
@@ -314,7 +325,8 @@ export function ComplaintCategoriesView() {
               <tr>
                 <th className="py-3.5 px-4">Category Name</th>
                 <th className="py-3.5 px-4">Description</th>
-                <th className="py-3.5 px-4">Configured Review Level</th>
+                <th className="py-3.5 px-4">SLA (days)</th>
+                <th className="py-3.5 px-4">Default Priority</th>
                 <th className="py-3.5 px-4">Status</th>
                 <th className="py-3.5 px-4">Created Date</th>
                 <th className="py-3.5 px-4 text-right">Actions</th>
@@ -345,8 +357,12 @@ export function ComplaintCategoriesView() {
                     </td>
 
                     <td className="py-3.5 px-4">
-                      <span className="px-2.5 py-0.5 rounded-lg text-xs font-bold bg-purple-100 text-purple-900 border border-purple-200">
-                        {cat.reviewLevel || "Standard"}
+                      <span className="font-bold text-slate-800">{cat.slaDays} days</span>
+                      <p className="text-[10px] text-slate-400">Action due SLA</p>
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <span className="px-2.5 py-0.5 rounded-lg text-xs font-bold bg-amber-100 text-amber-900 border border-amber-200">
+                        {cat.defaultPriority}
                       </span>
                     </td>
 
@@ -413,7 +429,7 @@ export function ComplaintCategoriesView() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={5} className="py-8 text-center text-slate-500 text-xs">
+                  <td colSpan={7} className="py-8 text-center text-slate-500 text-xs">
                     No complaint categories found matching your search.
                   </td>
                 </tr>
@@ -530,24 +546,44 @@ export function ComplaintCategoriesView() {
               />
             </div>
 
-            {/* Configured Review Level */}
-            <div>
-              <label className="block font-bold text-slate-700 mb-1">
-                Configured Review Level <span className="text-rose-500">*</span>
-              </label>
-              <select
-                value={formReviewLevel}
-                onChange={(e) => setFormReviewLevel(e.target.value as ReviewLevelRequirement)}
-                className="w-full rounded-xl border border-slate-200 p-2.5 font-bold text-purple-900 bg-purple-50/40 focus:outline-none focus:ring-2 focus:ring-purple-600"
-              >
-                <option value="Standard">Standard (1-Level Officer Review)</option>
-                <option value="Manager Review">Manager Review (HR Manager Approval Required)</option>
-                <option value="Senior Management Review">Senior Management Review (HR Manager + GM Review)</option>
-                <option value="Special Committee Review">Special Committee Review (POSH / Internal Committee)</option>
-              </select>
-              <p className="text-[11px] text-slate-500 mt-1">
-                Determines the approval chain routing required for grievances filed under this category.
-              </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  SLA — action due within (days) <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={90}
+                  required
+                  value={formSlaDays}
+                  onChange={(e) => setFormSlaDays(Number(e.target.value))}
+                  className="w-full rounded-xl border border-slate-200 p-2.5 font-bold text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                />
+                <p className="text-[11px] text-slate-500 mt-1">
+                  HR should take action within this many days (due date on each ticket).
+                </p>
+              </div>
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Default priority <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={formDefaultPriority}
+                  onChange={(e) =>
+                    setFormDefaultPriority(e.target.value as ComplaintCategoryPriority)
+                  }
+                  className="w-full rounded-xl border border-slate-200 p-2.5 font-bold text-amber-900 bg-amber-50/40 focus:outline-none focus:ring-2 focus:ring-amber-600"
+                >
+                  <option value="Low">Low</option>
+                  <option value="Medium">Medium</option>
+                  <option value="High">High</option>
+                  <option value="Critical">Critical</option>
+                </select>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Pre-filled when raising a complaint in this category.
+                </p>
+              </div>
             </div>
 
             {/* Status Selection */}
@@ -612,6 +648,14 @@ export function ComplaintCategoriesView() {
 
             <div className="p-3.5 rounded-xl border border-blue-200 bg-blue-50/50 space-y-2">
               <span className="font-extrabold text-blue-950 block uppercase">Master Information</span>
+              <div className="flex justify-between">
+                <span className="text-slate-600">SLA (action within):</span>
+                <strong className="text-slate-900">{viewingCategory.slaDays} days</strong>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-600">Default priority:</span>
+                <strong className="text-amber-900">{viewingCategory.defaultPriority}</strong>
+              </div>
               <div className="flex justify-between">
                 <span className="text-slate-600">Created Date:</span>
                 <strong className="text-slate-900">{viewingCategory.createdDate}</strong>

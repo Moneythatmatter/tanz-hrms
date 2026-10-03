@@ -35,12 +35,16 @@ import {
   mapComplaintToGrievance,
   mapComplaintToApi,
   mapEmployeeFromApi,
+  mapComplaintCategoryFromApi,
 } from "@/lib/hr/api-mappers";
+import type { ComplaintCategory } from "@/components/hr/ComplaintCategoriesView";
 import type { EmployeeItem } from "@/app/data/hr/employeeListData";
 import { HREmployeeCell } from "@/components/hr/shared/HREmployeeCell";
+import { GRIEVANCE_STATUSES, isClosedGrievanceStatus } from "@/lib/hr/grievance-status";
 
-export type GrievanceStatus = "Open" | "In Review" | "Resolved" | "Escalated" | "Closed";
 export type GrievancePriority = "Low" | "Medium" | "High" | "Critical";
+
+export { GRIEVANCE_STATUSES as GRIEVANCE_WORKFLOW_STATUSES };
 
 export interface GrievanceComplaint {
   id: string;
@@ -56,38 +60,66 @@ export interface GrievanceComplaint {
   description: string;
   incidentDate: string;
   priority: GrievancePriority;
-  status: GrievanceStatus;
+  status: string;
   submittedDate: string;
+  submittedDateIso?: string;
+  dueDate?: string;
+  dueDateIso?: string;
   isAnonymous: boolean;
   assignedTo?: string;
   attachmentName?: string;
   resolutionNotes?: string;
 }
 
-// 16 Default Active Categories matching ComplaintCategoriesView master
-const ACTIVE_CATEGORIES = [
-  "Payroll & Salary Issues",
-  "Attendance Issues",
-  "Leave Related Issues",
-  "Shift Scheduling Issues",
-  "Overtime Issues",
-  "Manager Complaint",
-  "Team Conflict",
-  "Workplace Harassment",
-  "Sexual Harassment (POSH)",
-  "Discrimination",
-  "Workplace Safety",
-  "Policy Violation",
-  "Facilities & Infrastructure",
-  "IT/System Issues",
-  "Workload Concerns",
-  "Other",
-];
+function dueDateFromSlaDays(slaDays: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + Math.max(1, slaDays));
+  return d.toISOString().slice(0, 10);
+}
+
+function todayIsoDate(): string {
+  return new Date().toLocaleDateString("en-CA");
+}
+
+function isClosedComplaint(status: string): boolean {
+  return isClosedGrievanceStatus(status);
+}
+
+function isDueComplaint(c: GrievanceComplaint, today: string): boolean {
+  if (isClosedComplaint(c.status)) return false;
+  const due = c.dueDateIso?.slice(0, 10);
+  return Boolean(due && due < today);
+}
+
+function isHighPriorityComplaint(c: GrievanceComplaint): boolean {
+  return c.priority === "High" || c.priority === "Critical";
+}
+
+function complaintDisplayRank(c: GrievanceComplaint, today: string): number {
+  if (isClosedComplaint(c.status)) return 3;
+  if (isDueComplaint(c, today)) return 0;
+  if (isHighPriorityComplaint(c)) return 1;
+  return 2;
+}
+
+function compareComplaints(a: GrievanceComplaint, b: GrievanceComplaint, today: string): number {
+  const rankDiff = complaintDisplayRank(a, today) - complaintDisplayRank(b, today);
+  if (rankDiff !== 0) return rankDiff;
+
+  const rank = complaintDisplayRank(a, today);
+  if (rank === 0) {
+    return (a.dueDateIso ?? "").localeCompare(b.dueDateIso ?? "");
+  }
+  if (rank === 3) {
+    return (b.submittedDateIso ?? "").localeCompare(a.submittedDateIso ?? "");
+  }
+  return (b.submittedDateIso ?? "").localeCompare(a.submittedDateIso ?? "");
+}
 
 export function RaiseComplaintView() {
   const [complaints, setComplaints] = useState<GrievanceComplaint[]>([]);
   const [employees, setEmployees] = useState<EmployeeItem[]>([]);
-  const [availableCategories, setAvailableCategories] = useState<string[]>(ACTIVE_CATEGORIES);
+  const [categoryMaster, setCategoryMaster] = useState<ComplaintCategory[]>([]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const loadComplaints = async () => {
@@ -101,14 +133,11 @@ export function RaiseComplaintView() {
       const mappedEmps = (empRows as Record<string, unknown>[]).map(mapEmployeeFromApi);
       setEmployees(mappedEmps);
 
-      if (Array.isArray(catRows) && catRows.length > 0) {
-        const dynamicCats = catRows
-          .map((c) => String(c.categoryName || c.category_name || c.name || "").trim())
-          .filter(Boolean);
-        if (dynamicCats.length > 0) {
-          setAvailableCategories(Array.from(new Set([...dynamicCats, ...ACTIVE_CATEGORIES])));
-        }
-      }
+      const activeCategories = (catRows as Record<string, unknown>[])
+        .map(mapComplaintCategoryFromApi)
+        .filter((c) => c.status === "Active")
+        .sort((a, b) => a.categoryName.localeCompare(b.categoryName));
+      setCategoryMaster(activeCategories);
 
       const empLookup = new Map(mappedEmps.map((e) => [e.id, e]));
       setComplaints(
@@ -135,10 +164,21 @@ export function RaiseComplaintView() {
   // Modals & Drawers
   const [isRaiseModalOpen, setIsRaiseModalOpen] = useState(false);
   const [viewingComplaint, setViewingComplaint] = useState<GrievanceComplaint | null>(null);
+  const [processStatus, setProcessStatus] = useState("");
+  const [processAssignedTo, setProcessAssignedTo] = useState("");
+  const [processResolutionNotes, setProcessResolutionNotes] = useState("");
+  const [isSavingProcess, setIsSavingProcess] = useState(false);
+
+  useEffect(() => {
+    if (!viewingComplaint) return;
+    setProcessStatus(viewingComplaint.status || "Submitted");
+    setProcessAssignedTo(viewingComplaint.assignedTo ?? "");
+    setProcessResolutionNotes(viewingComplaint.resolutionNotes ?? "");
+  }, [viewingComplaint]);
 
   // Form State for Raising New Complaint
   const [formEmployeeId, setFormEmployeeId] = useState("");
-  const [formCategory, setFormCategory] = useState(ACTIVE_CATEGORIES[0]);
+  const [formCategoryId, setFormCategoryId] = useState("");
   const [formSubject, setFormSubject] = useState("");
   const [formDescription, setFormDescription] = useState("");
   const [formIncidentDate, setFormIncidentDate] = useState(new Date().toISOString().split("T")[0]);
@@ -147,19 +187,42 @@ export function RaiseComplaintView() {
   const [formAttachment, setFormAttachment] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const selectedCategory = useMemo(
+    () => categoryMaster.find((c) => c.id === formCategoryId),
+    [categoryMaster, formCategoryId],
+  );
+
+  useEffect(() => {
+    if (!formCategoryId && categoryMaster[0]) {
+      setFormCategoryId(categoryMaster[0].id);
+      setFormPriority(categoryMaster[0].defaultPriority as GrievancePriority);
+    }
+  }, [categoryMaster, formCategoryId]);
+
+  const categoryFilterOptions = useMemo(
+    () => categoryMaster.map((c) => c.categoryName),
+    [categoryMaster],
+  );
+
   // KPI Metrics
   const stats = useMemo(() => {
     const total = complaints.length;
-    const open = complaints.filter((c) => c.status === "Open" || c.status === "In Review").length;
-    const resolved = complaints.filter((c) => c.status === "Resolved" || c.status === "Closed").length;
-    const escalated = complaints.filter((c) => c.status === "Escalated" || c.priority === "Critical").length;
-
-    return { total, open, resolved, escalated };
+    let submitted = 0;
+    let pending = 0;
+    let closed = 0;
+    for (const c of complaints) {
+      if (c.status === "Closed") closed += 1;
+      else if (c.status === "Pending") pending += 1;
+      else submitted += 1;
+    }
+    return { total, submitted, pending, closed };
   }, [complaints]);
 
-  // Filtered List
+  const todayIso = useMemo(() => todayIsoDate(), []);
+
+  // Filtered + sorted list: overdue SLA → high priority open → other open → closed
   const filteredComplaints = useMemo(() => {
-    return complaints.filter((c) => {
+    const filtered = complaints.filter((c) => {
       const matchSearch =
         c.ticketNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
         c.subject.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -171,7 +234,66 @@ export function RaiseComplaintView() {
 
       return matchSearch && matchCategory && matchStatus;
     });
-  }, [complaints, searchTerm, categoryFilter, statusFilter]);
+
+    return [...filtered].sort((a, b) => compareComplaints(a, b, todayIso));
+  }, [complaints, searchTerm, categoryFilter, statusFilter, todayIso]);
+
+  const handleProcessGrievance = async () => {
+    if (!viewingComplaint || isSavingProcess) return;
+
+    setIsSavingProcess(true);
+    try {
+      let timeline: Record<string, unknown>[] = [];
+      try {
+        const existing = await hrComplaintService.get(viewingComplaint.id);
+        const raw = existing.timeline;
+        if (Array.isArray(raw)) {
+          timeline = raw.map((entry) => ({ ...(entry as Record<string, unknown>) }));
+        }
+      } catch {
+        timeline = [];
+      }
+
+      const prevStatus = viewingComplaint.status;
+      const newStatus = processStatus.trim() || prevStatus;
+      const notes = processResolutionNotes.trim();
+      const officer = processAssignedTo.trim();
+
+      const statusChanged = newStatus !== prevStatus;
+      const metaChanged =
+        statusChanged ||
+        notes !== (viewingComplaint.resolutionNotes ?? "") ||
+        officer !== (viewingComplaint.assignedTo ?? "");
+
+      if (metaChanged) {
+        timeline.unshift({
+          id: `tl-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          user: "HR Admin",
+          role: "HR",
+          action: statusChanged ? "Status updated" : "Grievance updated",
+          prevStatus: statusChanged ? prevStatus : undefined,
+          newStatus: statusChanged ? newStatus : undefined,
+          comment: notes || undefined,
+        });
+      }
+
+      await hrComplaintService.update(viewingComplaint.id, {
+        status: newStatus,
+        assignedOfficer: officer || null,
+        resolutionNotes: notes || null,
+        timeline,
+      });
+
+      await loadComplaints();
+      setViewingComplaint(null);
+      setToastMessage(`Grievance ${viewingComplaint.ticketNo} saved (${newStatus}).`);
+    } catch (e) {
+      setToastMessage(e instanceof Error ? e.message : "Failed to update grievance");
+    } finally {
+      setIsSavingProcess(false);
+    }
+  };
 
   // Submit Complaint Handler
   const handleRaiseSubmit = async (e: React.FormEvent) => {
@@ -189,6 +311,11 @@ export function RaiseComplaintView() {
       return;
     }
 
+    if (!selectedCategory) {
+      alert("Please select a grievance category from Masters → Complaint Categories.");
+      return;
+    }
+
     const selectedEmp = employees.find((e) => e.id === formEmployeeId);
     setIsSubmitting(true);
 
@@ -199,12 +326,14 @@ export function RaiseComplaintView() {
           employeeName: selectedEmp?.name,
           department: selectedEmp?.department,
           designation: selectedEmp?.designation,
-          category: formCategory,
+          categoryId: selectedCategory.id,
+          category: selectedCategory.categoryName,
           subject: formSubject.trim(),
           description: formDescription.trim(),
           incidentDate: formIncidentDate,
           priority: formPriority,
-          status: "Open",
+          dueDate: dueDateFromSlaDays(selectedCategory.slaDays),
+          status: "Submitted",
           isAnonymous: formIsAnonymous,
           attachmentName: formAttachment ? formAttachment.name : undefined,
         }),
@@ -234,12 +363,11 @@ export function RaiseComplaintView() {
   return (
     <ModulePageShell
       eyebrow="Human Resource / Grievances"
-      title="Raise Complaint"
-      description="Submit employee grievances, confidential concerns, or workplace issues for HR redressal and tracking."
+      title="Grievances"
+      description="Submit grievances and review all tickets — overdue SLA first, then high priority, then closed."
       breadcrumbs={[
         { label: "Human Resource", href: "/human-resources/dashboard" },
         { label: "Grievances" },
-        { label: "Raise Complaint" },
       ]}
       toast={toastMessage}
       onDismissToast={() => setToastMessage(null)}
@@ -251,7 +379,7 @@ export function RaiseComplaintView() {
           className="rounded-xl text-xs font-bold bg-emerald-700 hover:bg-emerald-800 text-white shadow-xs cursor-pointer"
         >
           <Plus className="mr-1.5 h-3.5 w-3.5" />
-          Raise New Complaint
+          Raise Grievance
         </Button>
       }
     >
@@ -267,25 +395,25 @@ export function RaiseComplaintView() {
           icon={<FileText className="h-5 w-5" />}
         />
         <HRKPICard
-          label="Open / In Review"
-          value={`${stats.open}`}
-          subtitle="Active Investigations"
+          label="Submitted"
+          value={`${stats.submitted}`}
+          subtitle="Awaiting HR pickup"
           tone="amber"
           icon={<Clock className="h-5 w-5" />}
         />
         <HRKPICard
-          label="Resolved Tickets"
-          value={`${stats.resolved}`}
-          subtitle="Redressed &amp; Closed"
-          tone="emerald"
-          icon={<CheckCircle2 className="h-5 w-5" />}
+          label="Pending"
+          value={`${stats.pending}`}
+          subtitle="Under review"
+          tone="blue"
+          icon={<MessageSquare className="h-5 w-5" />}
         />
         <HRKPICard
-          label="Escalated / Critical"
-          value={`${stats.escalated}`}
-          subtitle="High Severity Action"
-          tone="rose"
-          icon={<ShieldAlert className="h-5 w-5" />}
+          label="Closed"
+          value={`${stats.closed}`}
+          subtitle="Completed"
+          tone="emerald"
+          icon={<CheckCircle2 className="h-5 w-5" />}
         />
       </div>
 
@@ -323,7 +451,7 @@ export function RaiseComplaintView() {
                 className="text-xs rounded-xl border border-slate-200 py-2 px-3 bg-white font-semibold text-slate-800"
               >
                 <option value="ALL">All Categories</option>
-                {ACTIVE_CATEGORIES.map((cat) => (
+                {categoryFilterOptions.map((cat) => (
                   <option key={cat} value={cat}>
                     {cat}
                   </option>
@@ -336,10 +464,11 @@ export function RaiseComplaintView() {
                 className="text-xs rounded-xl border border-slate-200 py-2 px-3 bg-white font-semibold text-slate-800"
               >
                 <option value="ALL">All Statuses</option>
-                <option value="Open">🟡 Open</option>
-                <option value="In Review">🔵 In Review</option>
-                <option value="Resolved">🟢 Resolved</option>
-                <option value="Escalated">🔴 Escalated</option>
+                {GRIEVANCE_STATUSES.map((st) => (
+                  <option key={st} value={st}>
+                    {st}
+                  </option>
+                ))}
               </select>
 
               <button
@@ -396,7 +525,14 @@ export function RaiseComplaintView() {
                     onClick={() => setViewingComplaint(c)}
                   >
                     <td className="py-3.5 px-4 font-mono font-extrabold text-slate-900">
-                      {c.ticketNo}
+                      <div className="flex flex-col gap-0.5">
+                        <span>{c.ticketNo}</span>
+                        {isDueComplaint(c, todayIso) ? (
+                          <span className="text-[10px] font-bold uppercase text-rose-700">
+                            SLA overdue
+                          </span>
+                        ) : null}
+                      </div>
                     </td>
 
                     <td className="py-3.5 px-4">
@@ -418,6 +554,8 @@ export function RaiseComplaintView() {
                           id={c.employeeId}
                           avatar={c.avatar}
                           photoUrl={c.photoUrl}
+                          department={c.department}
+                          secondaryLine="department"
                         />
                       )}
                     </td>
@@ -568,16 +706,37 @@ export function RaiseComplaintView() {
                 Grievance Category <span className="text-rose-500">*</span>
               </label>
               <select
-                value={formCategory}
-                onChange={(e) => setFormCategory(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 p-2.5 font-semibold text-slate-900 bg-white"
+                value={formCategoryId}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  setFormCategoryId(id);
+                  const cat = categoryMaster.find((c) => c.id === id);
+                  if (cat) {
+                    setFormPriority(cat.defaultPriority as GrievancePriority);
+                  }
+                }}
+                required
+                disabled={!categoryMaster.length}
+                className="w-full rounded-xl border border-slate-200 p-2.5 font-semibold text-slate-900 bg-white disabled:opacity-60"
               >
-                {availableCategories.map((cat) => (
-                  <option key={cat} value={cat}>
-                    {cat}
-                  </option>
-                ))}
+                {!categoryMaster.length ? (
+                  <option value="">No active categories — add them in Masters</option>
+                ) : (
+                  categoryMaster.map((cat) => (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.categoryName}
+                    </option>
+                  ))
+                )}
               </select>
+              {selectedCategory ? (
+                <p className="mt-1.5 text-[11px] text-slate-600">
+                  SLA: HR action due within{" "}
+                  <strong>{selectedCategory.slaDays} days</strong> (target due{" "}
+                  {dueDateFromSlaDays(selectedCategory.slaDays)}). Default priority:{" "}
+                  <strong>{selectedCategory.defaultPriority}</strong>.
+                </p>
+              ) : null}
             </div>
 
             {/* Subject */}
@@ -737,6 +896,7 @@ export function RaiseComplaintView() {
                   avatar={viewingComplaint.avatar}
                   photoUrl={viewingComplaint.photoUrl}
                   department={viewingComplaint.department}
+                  secondaryLine="department"
                 />
               )}
             </div>
@@ -753,23 +913,81 @@ export function RaiseComplaintView() {
               )}
             </div>
 
-            {/* Assigned & Resolution */}
             <div className="p-3.5 rounded-xl border border-blue-200 bg-blue-50/50 space-y-2">
-              <span className="font-extrabold text-blue-950 block uppercase text-[11px]">Redressal &amp; Investigation</span>
-              <div className="flex justify-between">
-                <span className="text-slate-600">Assigned Officer:</span>
-                <strong className="text-slate-900">{viewingComplaint.assignedTo || "Unassigned"}</strong>
-              </div>
+              <span className="font-extrabold text-blue-950 block uppercase text-[11px]">Current summary</span>
               <div className="flex justify-between">
                 <span className="text-slate-600">Priority:</span>
                 <strong className="text-slate-900">{viewingComplaint.priority}</strong>
               </div>
-              {viewingComplaint.resolutionNotes && (
-                <div className="pt-2 border-t border-blue-200">
-                  <span className="font-bold text-emerald-900 block">Resolution Notes:</span>
-                  <p className="text-slate-700 italic">{viewingComplaint.resolutionNotes}</p>
+              {viewingComplaint.dueDate ? (
+                <div className="flex justify-between">
+                  <span className="text-slate-600">SLA due:</span>
+                  <strong className="text-slate-900">{viewingComplaint.dueDate}</strong>
                 </div>
-              )}
+              ) : null}
+            </div>
+
+            {/* Process grievance — status updates only on this page */}
+            <div className="p-4 rounded-xl border-2 border-emerald-200 bg-emerald-50/40 space-y-3">
+              <div className="flex items-center gap-2">
+                <RefreshCw className="h-4 w-4 text-emerald-800" />
+                <span className="font-extrabold text-emerald-950 uppercase text-[11px]">
+                  Process grievance
+                </span>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Status</label>
+                <select
+                  value={processStatus}
+                  onChange={(e) => setProcessStatus(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 p-2.5 font-semibold text-slate-800 bg-white"
+                >
+                  {GRIEVANCE_STATUSES.map((st) => (
+                    <option key={st} value={st}>
+                      {st}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Assigned officer</label>
+                <input
+                  type="text"
+                  value={processAssignedTo}
+                  onChange={(e) => setProcessAssignedTo(e.target.value)}
+                  placeholder="Name of HR / investigating officer"
+                  className="w-full rounded-xl border border-slate-200 p-2.5 font-medium text-slate-800 bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Resolution / investigation notes</label>
+                <textarea
+                  value={processResolutionNotes}
+                  onChange={(e) => setProcessResolutionNotes(e.target.value)}
+                  rows={4}
+                  placeholder="Findings, actions taken, or closure remarks…"
+                  className="w-full rounded-xl border border-slate-200 p-2.5 font-medium text-slate-800 bg-white resize-y min-h-[88px]"
+                />
+              </div>
+
+              <Button
+                type="button"
+                disabled={isSavingProcess}
+                onClick={() => void handleProcessGrievance()}
+                className="w-full rounded-xl text-xs font-bold bg-emerald-700 hover:bg-emerald-800 text-white"
+              >
+                {isSavingProcess ? (
+                  <>Saving…</>
+                ) : (
+                  <>
+                    <CheckCircle2 className="mr-1.5 h-3.5 w-3.5 inline" />
+                    Save status &amp; updates
+                  </>
+                )}
+              </Button>
             </div>
           </div>
         )}
@@ -790,7 +1008,7 @@ export function RaiseComplaintView() {
               className="w-full rounded-xl border border-slate-200 p-2.5 font-semibold text-slate-800 bg-white"
             >
               <option value="ALL">All Categories</option>
-              {ACTIVE_CATEGORIES.map((cat) => (
+              {categoryFilterOptions.map((cat) => (
                 <option key={cat} value={cat}>
                   {cat}
                 </option>
@@ -806,10 +1024,11 @@ export function RaiseComplaintView() {
               className="w-full rounded-xl border border-slate-200 p-2.5 font-semibold text-slate-800 bg-white"
             >
               <option value="ALL">All Statuses</option>
-              <option value="Open">Open</option>
-              <option value="In Review">In Review</option>
-              <option value="Resolved">Resolved</option>
-              <option value="Escalated">Escalated</option>
+              {GRIEVANCE_STATUSES.map((st) => (
+                <option key={st} value={st}>
+                  {st}
+                </option>
+              ))}
             </select>
           </div>
 

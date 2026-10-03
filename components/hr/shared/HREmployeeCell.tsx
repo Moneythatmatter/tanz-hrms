@@ -10,6 +10,8 @@ export interface HREmployeeCellProps {
   photoUrl?: string;
   department?: string;
   designation?: string;
+  /** When "department", the subtitle shows department instead of employee id. */
+  secondaryLine?: "id" | "department";
   className?: string;
 }
 
@@ -20,8 +22,14 @@ export function HREmployeeCell({
   photoUrl,
   department,
   designation,
+  secondaryLine = "id",
   className,
 }: HREmployeeCellProps) {
+  const subtitle =
+    secondaryLine === "department"
+      ? department?.trim() || "—"
+      : id;
+
   return (
     <div className={cn("flex items-center gap-2.5", className)}>
       {photoUrl ? (
@@ -38,8 +46,16 @@ export function HREmployeeCell({
       <div>
         <p className="font-bold text-slate-900 leading-tight">{name}</p>
         <div className="flex items-center gap-1.5 text-[10px]">
-          <span className="font-mono text-slate-400">{id}</span>
-          {department && (
+          <span
+            className={
+              secondaryLine === "department"
+                ? "text-slate-500 font-semibold"
+                : "font-mono text-slate-400"
+            }
+          >
+            {subtitle}
+          </span>
+          {secondaryLine === "id" && department && (
             <span className="text-slate-500 font-semibold">• {department}</span>
           )}
         </div>

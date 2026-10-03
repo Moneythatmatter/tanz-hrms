@@ -20,10 +20,13 @@ const PATH_MODULE_RULES: Array<{ pattern: RegExp; moduleKey: string }> = [
   { pattern: /^\/human-resources\/payroll\/salary-structure\/?$/, moduleKey: "hr_salary_structure" },
   { pattern: /^\/human-resources\/payroll\/payslips\/?$/, moduleKey: "hr_payslips" },
   { pattern: /^\/human-resources\/payroll\/payroll-settings\/?$/, moduleKey: "hr_payroll_settings" },
-  { pattern: /^\/human-resources\/grievances\/raise-complaint\/?$/, moduleKey: "hr_raise_complaint" },
-  { pattern: /^\/human-resources\/grievances\/complaint-list\/?$/, moduleKey: "hr_complaint_list" },
+  {
+    pattern:
+      /^\/human-resources\/grievances(\/(raise-complaint|raise|complaint-list|list|complaint-status|status))?\/?$/,
+    moduleKey: "hr_raise_complaint",
+  },
   { pattern: /^\/human-resources\/grievances\/complaint-categories\/?$/, moduleKey: "hr_complaint_categories" },
-  { pattern: /^\/human-resources\/grievances(\/complaint-status|\/status)?\/?$/, moduleKey: "hr_complaint_status" },
+  { pattern: /^\/human-resources\/masters\/complaint-categories\/?$/, moduleKey: "hr_complaint_categories" },
   { pattern: /^\/human-resources\/reports\/?$/, moduleKey: "hr_reports" },
   { pattern: /^\/human-resources\/settings\/users\/?$/, moduleKey: "hr_user_management" },
   { pattern: /^\/human-resources\/users\/?$/, moduleKey: "hr_user_management" },
@@ -52,12 +55,6 @@ const HUB_ROUTE_MODULES: Record<string, string[]> = {
     "hr_payslips",
     "hr_payroll_settings",
   ],
-  "/human-resources/grievances": [
-    "hr_raise_complaint",
-    "hr_complaint_list",
-    "hr_complaint_categories",
-    "hr_complaint_status",
-  ],
   "/human-resources/masters": [
     "hr_departments",
     "hr_designations",
@@ -68,6 +65,7 @@ const HUB_ROUTE_MODULES: Record<string, string[]> = {
     "hr_holiday_calendar",
     "hr_salary_components",
     "hr_document_masters",
+    "hr_complaint_categories",
   ],
 };
 
